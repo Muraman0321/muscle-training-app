@@ -7,19 +7,19 @@
  *   種目マスタ     : ID, 種目名, 部位, 作成日
  *   トレーニングログ : 日時, 種目名, 重量kg, 回数, セット, メモ
  *   体組成ログ     : 日時, 体重kg, 体脂肪率, メモ
- *   週間メニュー   : 曜日, 種目名, 目標セット, 目標回数, 目標重量, メモ
+ *   長期メニュー   : 週, 曜日, 種目名, 目標セット, 目標回数, 目標重量, メモ
  */
 
 var SHEET_EXERCISES = '種目マスタ';
 var SHEET_TRAINING = 'トレーニングログ';
 var SHEET_BODY = '体組成ログ';
-var SHEET_MENU = '週間メニュー';
+var SHEET_MENU = '長期メニュー';
 
 var HEADERS = {};
 HEADERS[SHEET_EXERCISES] = ['ID', '種目名', '部位', '作成日'];
 HEADERS[SHEET_TRAINING] = ['日時', '種目名', '重量kg', '回数', 'セット', 'メモ'];
 HEADERS[SHEET_BODY] = ['日時', '体重kg', '体脂肪率', 'メモ'];
-HEADERS[SHEET_MENU] = ['曜日', '種目名', '目標セット', '目標回数', '目標重量', 'メモ'];
+HEADERS[SHEET_MENU] = ['週', '曜日', '種目名', '目標セット', '目標回数', '目標重量', 'メモ'];
 
 /**
  * Apps Scriptエディタから手動で一度実行する。
@@ -223,8 +223,8 @@ function handleDeleteExercise_(payload) {
   return jsonOut_({ ok: true });
 }
 
-// payload: [{ day, exercise, sets, reps, weight, memo }, ...]
-// 週間メニューは毎回全置き換え(既存行を消してから書き込む)
+// payload: [{ week, day, exercise, sets, reps, weight, memo }, ...]
+// 長期メニューは毎回全置き換え(既存行を消してから書き込む)
 function handleImportMenu_(payload) {
   if (!Array.isArray(payload)) {
     return jsonOut_({ ok: false, error: 'payload must be an array' });
@@ -239,6 +239,7 @@ function handleImportMenu_(payload) {
   }
   var rows = payload.map(function (m) {
     return [
+      Number(m.week) || '',
       m.day || '',
       m.exercise || '',
       Number(m.sets) || '',

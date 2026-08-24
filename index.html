@@ -59,6 +59,7 @@
   label:first-child { margin-top: 0; }
   input, select, textarea {
     width: 100%;
+    max-width: 100%;
     padding: 10px 12px;
     border-radius: 8px;
     border: 1px solid var(--border);
@@ -68,8 +69,15 @@
     font-family: inherit;
   }
   textarea { resize: vertical; min-height: 80px; }
-  .row { display: flex; gap: 8px; }
-  .row > * { flex: 1; }
+  /* iOS Safari等はtype=dateのネイティブ外観に幅100%指定が効かず右にはみ出すため、
+     外観をリセットして自前のスタイル(width:100%)を効かせる */
+  input[type="date"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+  }
+  .row { display: flex; gap: 8px; min-width: 0; }
+  .row > * { flex: 1; min-width: 0; }
   .btn {
     display: inline-block;
     width: 100%;
@@ -120,6 +128,8 @@
   .status { font-size: 13px; margin-top: 8px; min-height: 18px; }
   .status.ok { color: #1f9d55; }
   .status.err { color: var(--danger); }
+  .menu-week { font-weight: 800; font-size: 16px; margin: 20px 0 8px; padding-top: 14px; border-top: 2px solid var(--border); }
+  .menu-week:first-child { margin-top: 0; padding-top: 0; border-top: none; }
   .menu-day { font-weight: 700; font-size: 14px; margin: 14px 0 6px; }
   .menu-day:first-child { margin-top: 0; }
   canvas { max-width: 100%; }
@@ -238,13 +248,13 @@
   <!-- メニュー -->
   <section class="page" id="page-menu">
     <div class="card">
-      <h2>週間メニュー</h2>
+      <h2>長期メニュー</h2>
       <div id="menuView" class="muted">読み込み中...</div>
     </div>
     <div class="card">
       <h2>メニューをインポート</h2>
       <p class="muted">「プロフィール」タブで作った相談用プロンプトをClaudeに貼って、返ってきたJSONをここに貼り付けてください。</p>
-      <textarea id="menuJson" placeholder='[{"day":"月","exercise":"ベンチプレス","sets":4,"reps":"8-10","weight":"60kg","memo":""}]'></textarea>
+      <textarea id="menuJson" placeholder='[{"week":1,"day":"月","exercise":"ベンチプレス","sets":4,"reps":"8-10","weight":"60kg","memo":""}]'></textarea>
       <button class="btn" id="btnImportMenu">インポート(既存メニューを置き換え)</button>
       <div class="status" id="menuStatus"></div>
     </div>
@@ -562,20 +572,29 @@ async function loadMenu() {
       el.innerHTML = 'まだメニューがインポートされていません';
       return;
     }
-    const order = ['月', '火', '水', '木', '金', '土', '日'];
-    const byDay = {};
+    const dayOrder = ['月', '火', '水', '木', '金', '土', '日'];
+    const byWeek = {};
     rows.forEach(r => {
-      const d = r['曜日'];
-      (byDay[d] = byDay[d] || []).push(r);
+      const w = Number(r['週']) || 0;
+      (byWeek[w] = byWeek[w] || []).push(r);
     });
-    el.innerHTML = order
-      .filter(d => byDay[d])
-      .map(d => {
-        const items = byDay[d].map(r =>
-          `<div class="list-item"><span>${escapeHtml(r['種目名'])}</span><span>${escapeHtml(r['目標セット'])}セット × ${escapeHtml(r['目標回数'])} ${r['目標重量'] ? '(' + escapeHtml(r['目標重量']) + ')' : ''}</span></div>`
-        ).join('');
-        return `<div class="menu-day">${d}曜日</div>${items}`;
-      }).join('');
+    const weeks = Object.keys(byWeek).map(Number).sort((a, b) => a - b);
+    el.innerHTML = weeks.map(w => {
+      const byDay = {};
+      byWeek[w].forEach(r => {
+        const d = r['曜日'];
+        (byDay[d] = byDay[d] || []).push(r);
+      });
+      const dayBlocks = dayOrder
+        .filter(d => byDay[d])
+        .map(d => {
+          const items = byDay[d].map(r =>
+            `<div class="list-item"><span>${escapeHtml(r['種目名'])}</span><span>${escapeHtml(r['目標セット'])}セット × ${escapeHtml(r['目標回数'])} ${r['目標重量'] ? '(' + escapeHtml(r['目標重量']) + ')' : ''}</span></div>`
+          ).join('');
+          return `<div class="menu-day">${d}曜日</div>${items}`;
+        }).join('');
+      return `<div class="menu-week">第${w}週</div>${dayBlocks}`;
+    }).join('');
   } catch (e) {
     el.innerHTML = escapeHtml(e.message);
   }
@@ -623,9 +642,22 @@ document.getElementById('btnSaveProfile').addEventListener('click', () => {
   alert('プロフィールを保存しました');
 });
 
+function weeksUntil(dateStr) {
+  if (!dateStr) return null;
+  const target = new Date(dateStr + 'T00:00:00');
+  const now = new Date();
+  const diffMs = target - now;
+  if (diffMs <= 0) return null;
+  return Math.max(1, Math.round(diffMs / (7 * 24 * 60 * 60 * 1000)));
+}
+
 document.getElementById('btnGenPrompt').addEventListener('click', () => {
   const p = saveProfile();
-  const prompt = `以下の情報をもとに、私の週間筋トレメニューを考えてください。
+  const remainingWeeks = weeksUntil(p.pDeadline);
+  const periodNote = remainingWeeks
+    ? `本日から目標達成の期限まではおよそ${remainingWeeks}週間です。この期間全体をカバーする計画にしてください。`
+    : `期限が未指定、または期限を計算できないため、目標タイプに応じて妥当な週数(目安8〜12週)で計画してください。`;
+  const prompt = `以下の情報をもとに、私の長期的な筋トレメニュー(複数週にわたる計画)を考えてください。
 
 【プロフィール】
 - 経験レベル: ${p.pLevel}
@@ -638,20 +670,24 @@ document.getElementById('btnGenPrompt').addEventListener('click', () => {
 - 目標タイプ: ${p.pGoalType || '指定なし'}
 
 【お願い】
-上記に沿った週間メニューを提案してください。曜日ごとに種目・セット数・回数・重量の目安を決めてください(休養日は含めなくて構いません)。
+毎週同じ内容を繰り返す週間メニューではなく、目標達成の期限を見据えた長期(複数週間)のトレーニング計画を作ってください。
+- 全体を複数の週に分け、週が進むごとに重量やボリュームを段階的に変化させてください(漸進性過負荷。必要であれば増量期/減量期のようなフェーズ分けも歓迎です)
+- ${periodNote}
+- 週ごとに、曜日ごとの種目・セット数・回数・重量の目安を決めてください(休養日は含めなくて構いません)
 
 【出力形式】
 メニューは説明文とは別に、以下のJSON形式でコードブロックとして出力してください。このJSONを筋トレ記録アプリにそのままインポートします。
+- week は 1 始まりの週番号(数値)
 - day は "月" "火" "水" "木" "金" "土" "日" のいずれか
 - sets は数値、reps と weight は "8-10" のような幅を持つ文字列でも構いません
 
 \`\`\`json
 [
-  { "day": "月", "exercise": "種目名", "sets": 4, "reps": "8-10", "weight": "60kg目安", "memo": "" }
+  { "week": 1, "day": "月", "exercise": "種目名", "sets": 4, "reps": "8-10", "weight": "60kg目安", "memo": "" }
 ]
 \`\`\`
 
-まずメニューの意図(なぜこの構成にしたか)を簡潔に説明してから、最後にJSONを出力してください。`;
+まず計画全体の意図(週数・フェーズ分け・進行のさせ方)を簡潔に説明してから、最後にJSONを出力してください。`;
   document.getElementById('promptOutput').textContent = prompt;
   document.getElementById('promptCard').style.display = 'block';
   document.getElementById('promptCard').scrollIntoView({ behavior: 'smooth' });
