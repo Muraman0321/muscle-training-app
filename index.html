@@ -249,9 +249,19 @@
       <label for="chartExerciseSelect">種目</label>
       <select id="chartExerciseSelect"></select>
       <canvas id="chartExercise" height="220"></canvas>
-      <div class="muted" id="chartExerciseNote">その日の最高重量(kg)をプロットしています</div>
+      <div class="muted" id="chartExerciseNote">その日の推定1RMが最も高かったセットの重量と、推定1RM(Epley法)をプロットしています</div>
     </div>
     <button class="btn secondary" id="btnRefreshCharts">グラフを更新</button>
+  </section>
+
+  <!-- 1RM -->
+  <section class="page" id="page-onerm">
+    <div class="card">
+      <h2>種目別 推定1RM ベスト</h2>
+      <p class="muted">Epley法(重量 × (1 + 回数 / 30))による推定値です。自己ベストのセットを種目ごとに表示しています。</p>
+      <div id="oneRmList" class="muted">読み込み中...</div>
+    </div>
+    <button class="btn secondary" id="btnRefreshOneRm">更新</button>
   </section>
 
   <!-- メニュー -->
@@ -337,13 +347,22 @@
   <button data-page="log" class="active">記録</button>
   <button data-page="body">体重</button>
   <button data-page="chart">グラフ</button>
+  <button data-page="onerm">1RM</button>
   <button data-page="menu">メニュー</button>
   <button data-page="profile">プロフィール</button>
   <button data-page="settings">設定</button>
 </nav>
 
 <script>
-const TITLES = { log: '記録', body: '体重', chart: 'グラフ', menu: 'メニュー', profile: 'プロフィール', settings: '設定' };
+const TITLES = { log: '記録', body: '体重', chart: 'グラフ', onerm: '1RM', menu: 'メニュー', profile: 'プロフィール', settings: '設定' };
+
+// Epley法による推定1RM
+function calc1RM(weight, reps) {
+  const w = Number(weight) || 0;
+  const r = Number(reps) || 0;
+  if (!w || !r) return 0;
+  return w * (1 + r / 30);
+}
 
 function cfg() {
   try { return JSON.parse(localStorage.getItem('mta_cfg') || '{}'); }
@@ -401,6 +420,7 @@ document.querySelectorAll('.tabbar button').forEach(btn => {
     if (page === 'menu') loadMenu();
     if (page === 'chart') loadCharts();
     if (page === 'log') loadExercises();
+    if (page === 'onerm') loadOneRm();
   });
 });
 
@@ -449,7 +469,7 @@ document.getElementById('btnAddSet').addEventListener('click', async () => {
   const setNumber = sessionSets[exercise];
   try {
     await apiPost('addSets', [{ date, exercise, weight, reps, setNumber, memo }]);
-    sessionLog.unshift({ exercise, weight, reps, setNumber, memo });
+    sessionLog.unshift({ exercise, weight, reps, setNumber, memo, oneRM: calc1RM(weight, reps) });
     renderSessionList();
     showStatus('logStatus', '記録しました', false);
     document.getElementById('logWeight').value = '';
@@ -469,7 +489,7 @@ function renderSessionList() {
     return;
   }
   el.innerHTML = sessionLog.map(s =>
-    `<div class="list-item"><span>${escapeHtml(s.exercise)} (${s.setNumber}) &nbsp; ${s.weight}kg × ${s.reps}回</span></div>`
+    `<div class="list-item"><span>${escapeHtml(s.exercise)} (${s.setNumber}) &nbsp; ${s.weight}kg × ${s.reps}回</span><span class="muted">推定1RM ${s.oneRM.toFixed(1)}kg</span></div>`
   ).join('');
 }
 
@@ -555,8 +575,10 @@ function drawExerciseChart(exerciseName) {
   const byDate = {};
   rows.forEach(r => {
     const d = String(r['日時']).slice(0, 10);
-    const w = Number(r['重量kg']) || 0;
-    if (!byDate[d] || w > byDate[d]) byDate[d] = w;
+    const weight = Number(r['重量kg']) || 0;
+    const reps = Number(r['回数']) || 0;
+    const oneRM = calc1RM(weight, reps);
+    if (!byDate[d] || oneRM > byDate[d].oneRM) byDate[d] = { weight, oneRM };
   });
   const dates = Object.keys(byDate).sort();
   if (chartExerciseInstance) chartExerciseInstance.destroy();
@@ -564,13 +586,48 @@ function drawExerciseChart(exerciseName) {
     type: 'line',
     data: {
       labels: dates,
-      datasets: [{ label: exerciseName || '', data: dates.map(d => byDate[d]), borderColor: '#e8532e', tension: 0.2 }]
+      datasets: [
+        { label: exerciseName || '', data: dates.map(d => byDate[d].weight), borderColor: '#e8532e', tension: 0.2 },
+        { label: '推定1RM(Epley法)', data: dates.map(d => byDate[d].oneRM.toFixed(1)), borderColor: '#3d8bff', borderDash: [5, 4], tension: 0.2 }
+      ]
     },
     options: { scales: { y: { title: { display: true, text: 'kg' } } } }
   });
 }
 
 document.getElementById('btnRefreshCharts').addEventListener('click', loadCharts);
+
+// ---- 1RMタブ ----
+async function loadOneRm() {
+  const el = document.getElementById('oneRmList');
+  el.innerHTML = '読み込み中...';
+  try {
+    const rows = await apiGet('listSets');
+    const bestByExercise = {};
+    rows.forEach(r => {
+      const name = r['種目名'];
+      const weight = Number(r['重量kg']) || 0;
+      const reps = Number(r['回数']) || 0;
+      const oneRM = calc1RM(weight, reps);
+      const date = String(r['日時']).slice(0, 10);
+      if (!bestByExercise[name] || oneRM > bestByExercise[name].oneRM) {
+        bestByExercise[name] = { oneRM, weight, reps, date };
+      }
+    });
+    const names = Object.keys(bestByExercise).sort();
+    if (names.length === 0) {
+      el.innerHTML = 'まだ記録がありません';
+      return;
+    }
+    el.innerHTML = names.map(n => {
+      const b = bestByExercise[n];
+      return `<div class="list-item"><span>${escapeHtml(n)}</span><span>${b.oneRM.toFixed(1)}kg <span class="muted">(${b.weight}kg×${b.reps}回, ${b.date})</span></span></div>`;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = escapeHtml(e.message);
+  }
+}
+document.getElementById('btnRefreshOneRm').addEventListener('click', loadOneRm);
 
 // ---- メニュータブ ----
 async function loadMenu() {
