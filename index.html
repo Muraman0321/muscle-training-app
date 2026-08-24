@@ -29,8 +29,12 @@
     }
   }
   * { box-sizing: border-box; }
+  /* iOS(WebKit)はinput[type=date]をwidth指定より広いネイティブ最小サイズで描画することがあり、
+     それがページ全体の横スクロールを引き起こすのを防ぐための保険 */
+  html, body { overflow-x: hidden; }
   body {
     margin: 0;
+    width: 100%;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
     background: var(--bg);
     color: var(--text);
@@ -53,6 +57,7 @@
     border-radius: var(--radius);
     padding: 16px;
     margin-bottom: 14px;
+    overflow-x: hidden;
   }
   .card h2 { font-size: 15px; margin: 0 0 12px; color: var(--text-dim); font-weight: 600; }
   label { display: block; font-size: 13px; color: var(--text-dim); margin: 10px 0 4px; }
@@ -69,12 +74,16 @@
     font-family: inherit;
   }
   textarea { resize: vertical; min-height: 80px; }
-  /* iOS Safari等はtype=dateのネイティブ外観に幅100%指定が効かず右にはみ出すため、
-     外観をリセットして自前のスタイル(width:100%)を効かせる */
+  /* iOS(WebKit)はtype=dateのネイティブ外観に幅100%指定が効かず、カード幅より
+     広いネイティブ最小サイズで描画されることがあるため、外観をリセットしつつ
+     内側の余白を減らして少しでも収まりやすくする。それでも収まらない分は
+     .card / body の overflow-x: hidden で強制的に閉じ込める */
   input[type="date"] {
     -webkit-appearance: none;
     appearance: none;
     min-width: 0;
+    padding-left: 8px;
+    padding-right: 8px;
   }
   .row { display: flex; gap: 8px; min-width: 0; }
   .row > * { flex: 1; min-width: 0; }
