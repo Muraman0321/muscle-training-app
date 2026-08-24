@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>筋トレ記録</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --text: #1c1e21;
+    --text-dim: #6b7280;
+    --border: #e2e4e8;
+    --accent: #e8532e;
+    --accent-dim: #fde3da;
+    --danger: #d9364f;
+    --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15171a;
+      --card: #1f2226;
+      --text: #eceef0;
+      --text-dim: #9aa0a8;
+      --border: #2c2f34;
+      --accent: #ff6a3d;
+      --accent-dim: #3a231c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding-bottom: 76px;
+  }
+  header {
+    padding: 16px 16px 8px;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 5;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  main { padding: 8px 16px 24px; max-width: 560px; margin: 0 auto; }
+  .page { display: none; }
+  .page.active { display: block; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 12px; color: var(--text-dim); font-weight: 600; }
+  label { display: block; font-size: 13px; color: var(--text-dim); margin: 10px 0 4px; }
+  label:first-child { margin-top: 0; }
+  input, select, textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 80px; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .btn {
+    display: inline-block;
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    margin-top: 12px;
+    cursor: pointer;
+  }
+  .btn.secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .btn.small {
+    width: auto;
+    padding: 8px 14px;
+    font-size: 13px;
+    margin-top: 0;
+  }
+  .list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .list-item:last-child { border-bottom: none; }
+  .list-item .del { color: var(--danger); background: none; border: none; font-size: 13px; cursor: pointer; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    border-radius: 999px;
+    padding: 5px 10px 5px 12px;
+    font-size: 13px;
+    margin: 0 6px 6px 0;
+  }
+  .chip button { background: none; border: none; color: inherit; cursor: pointer; font-size: 13px; }
+  .muted { color: var(--text-dim); font-size: 13px; }
+  .status { font-size: 13px; margin-top: 8px; min-height: 18px; }
+  .status.ok { color: #1f9d55; }
+  .status.err { color: var(--danger); }
+  .menu-day { font-weight: 700; font-size: 14px; margin: 14px 0 6px; }
+  .menu-day:first-child { margin-top: 0; }
+  canvas { max-width: 100%; }
+  .tabbar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    display: flex;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    padding: 6px 0 max(6px, env(safe-area-inset-bottom));
+    z-index: 10;
+  }
+  .tabbar button {
+    flex: 1;
+    background: none;
+    border: none;
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 6px 2px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .tabbar button.active { color: var(--accent); font-weight: 700; }
+  .promptbox {
+    white-space: pre-wrap;
+    font-size: 13px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+
+<header><h1 id="pageTitle">記録</h1></header>
+<main>
+
+  <!-- 記録 -->
+  <section class="page active" id="page-log">
+    <div class="card">
+      <h2>セットを追加</h2>
+      <label for="logDate">日付</label>
+      <input type="date" id="logDate">
+      <label for="logExercise">種目</label>
+      <input type="text" id="logExercise" list="exerciseList" placeholder="例: ベンチプレス">
+      <datalist id="exerciseList"></datalist>
+      <div class="row">
+        <div>
+          <label for="logWeight">重量(kg)</label>
+          <input type="number" id="logWeight" step="0.5" inputmode="decimal">
+        </div>
+        <div>
+          <label for="logReps">回数</label>
+          <input type="number" id="logReps" step="1" inputmode="numeric">
+        </div>
+      </div>
+      <label for="logMemo">メモ(任意)</label>
+      <input type="text" id="logMemo" placeholder="フォーム崩れた、など">
+      <button class="btn" id="btnAddSet">セットを記録</button>
+      <div class="status" id="logStatus"></div>
+    </div>
+
+    <div class="card">
+      <h2>今回のセッション</h2>
+      <div id="sessionList" class="muted">まだ記録がありません</div>
+    </div>
+
+    <div class="card">
+      <h2>登録済みの種目</h2>
+      <div id="exerciseChips" class="muted">読み込み中...</div>
+    </div>
+  </section>
+
+  <!-- 体重 -->
+  <section class="page" id="page-body">
+    <div class="card">
+      <h2>体組成を記録</h2>
+      <label for="bodyDate">日付</label>
+      <input type="date" id="bodyDate">
+      <div class="row">
+        <div>
+          <label for="bodyWeight">体重(kg)</label>
+          <input type="number" id="bodyWeight" step="0.1" inputmode="decimal">
+        </div>
+        <div>
+          <label for="bodyFat">体脂肪率(%)</label>
+          <input type="number" id="bodyFat" step="0.1" inputmode="decimal">
+        </div>
+      </div>
+      <label for="bodyMemo">メモ(任意)</label>
+      <input type="text" id="bodyMemo">
+      <button class="btn" id="btnAddBody">記録する</button>
+      <div class="status" id="bodyStatus"></div>
+    </div>
+  </section>
+
+  <!-- グラフ -->
+  <section class="page" id="page-chart">
+    <div class="card">
+      <h2>体重・体脂肪率の推移</h2>
+      <canvas id="chartBody" height="220"></canvas>
+    </div>
+    <div class="card">
+      <h2>種目別 重量の推移</h2>
+      <label for="chartExerciseSelect">種目</label>
+      <select id="chartExerciseSelect"></select>
+      <canvas id="chartExercise" height="220"></canvas>
+      <div class="muted" id="chartExerciseNote">その日の最高重量(kg)をプロットしています</div>
+    </div>
+    <button class="btn secondary" id="btnRefreshCharts">グラフを更新</button>
+  </section>
+
+  <!-- メニュー -->
+  <section class="page" id="page-menu">
+    <div class="card">
+      <h2>週間メニュー</h2>
+      <div id="menuView" class="muted">読み込み中...</div>
+    </div>
+    <div class="card">
+      <h2>メニューをインポート</h2>
+      <p class="muted">「プロフィール」タブで作った相談用プロンプトをClaudeに貼って、返ってきたJSONをここに貼り付けてください。</p>
+      <textarea id="menuJson" placeholder='[{"day":"月","exercise":"ベンチプレス","sets":4,"reps":"8-10","weight":"60kg","memo":""}]'></textarea>
+      <button class="btn" id="btnImportMenu">インポート(既存メニューを置き換え)</button>
+      <div class="status" id="menuStatus"></div>
+    </div>
+  </section>
+
+  <!-- プロフィール -->
+  <section class="page" id="page-profile">
+    <div class="card">
+      <h2>プロフィール</h2>
+      <label for="pLevel">経験レベル</label>
+      <select id="pLevel">
+        <option value="初心者">初心者</option>
+        <option value="中級">中級</option>
+        <option value="上級">上級</option>
+      </select>
+      <label for="pFreq">週のジム頻度(回)</label>
+      <input type="number" id="pFreq" min="1" max="7" step="1">
+      <label for="pEquip">使える器具</label>
+      <select id="pEquip">
+        <option value="自重のみ">自重のみ</option>
+        <option value="ダンベルまで">ダンベルまで</option>
+        <option value="フルジム">フルジム</option>
+      </select>
+      <label for="pAvoid">避けたい種目・部位(怪我など)</label>
+      <textarea id="pAvoid" placeholder="例: 腰を痛めているのでデッドリフト系は避けたい"></textarea>
+      <label for="pShape">目指したい体形</label>
+      <textarea id="pShape" placeholder="例: フィジーク体形、肩と胸を大きくしたい"></textarea>
+      <div class="row">
+        <div>
+          <label for="pStrong">強い部位</label>
+          <input type="text" id="pStrong">
+        </div>
+        <div>
+          <label for="pWeak">弱い部位</label>
+          <input type="text" id="pWeak">
+        </div>
+      </div>
+      <label for="pDeadline">目標達成の期限</label>
+      <input type="date" id="pDeadline">
+      <label for="pGoalType">目標タイプ</label>
+      <input type="text" id="pGoalType" placeholder="例: 筋肥大 / 減量 / ベンチプレスPR更新">
+      <button class="btn" id="btnSaveProfile">プロフィールを保存</button>
+      <button class="btn secondary" id="btnGenPrompt">相談用プロンプトを作る</button>
+    </div>
+
+    <div class="card" id="promptCard" style="display:none">
+      <h2>Claudeへの相談用プロンプト</h2>
+      <div class="promptbox" id="promptOutput"></div>
+      <button class="btn" id="btnCopyPrompt">コピーする</button>
+      <div class="status" id="promptStatus"></div>
+    </div>
+  </section>
+
+  <!-- 設定 -->
+  <section class="page" id="page-settings">
+    <div class="card">
+      <h2>GAS連携設定</h2>
+      <label for="cfgUrl">Web AppのURL</label>
+      <input type="text" id="cfgUrl" placeholder="https://script.google.com/macros/s/xxxx/exec">
+      <label for="cfgToken">シークレットトークン</label>
+      <input type="text" id="cfgToken">
+      <button class="btn" id="btnSaveCfg">保存</button>
+      <button class="btn secondary" id="btnTestCfg">接続テスト</button>
+      <div class="status" id="cfgStatus"></div>
+    </div>
+  </section>
+
+</main>
+
+<nav class="tabbar">
+  <button data-page="log" class="active">記録</button>
+  <button data-page="body">体重</button>
+  <button data-page="chart">グラフ</button>
+  <button data-page="menu">メニュー</button>
+  <button data-page="profile">プロフィール</button>
+  <button data-page="settings">設定</button>
+</nav>
+
+<script>
+const TITLES = { log: '記録', body: '体重', chart: 'グラフ', menu: 'メニュー', profile: 'プロフィール', settings: '設定' };
+
+function cfg() {
+  try { return JSON.parse(localStorage.getItem('mta_cfg') || '{}'); }
+  catch (e) { return {}; }
+}
+function setCfg(obj) { localStorage.setItem('mta_cfg', JSON.stringify(obj)); }
+
+async function apiGet(action, extraParams) {
+  const c = cfg();
+  if (!c.gasUrl) throw new Error('設定タブでWeb AppのURLを登録してください');
+  const url = new URL(c.gasUrl);
+  url.searchParams.set('action', action);
+  url.searchParams.set('token', c.token || '');
+  if (extraParams) Object.entries(extraParams).forEach(([k, v]) => url.searchParams.set(k, v));
+  const res = await fetch(url.toString());
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'APIエラー');
+  return json.data;
+}
+
+async function apiPost(action, payload) {
+  const c = cfg();
+  if (!c.gasUrl) throw new Error('設定タブでWeb AppのURLを登録してください');
+  const res = await fetch(c.gasUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ token: c.token || '', action, payload })
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'APIエラー');
+  return json;
+}
+
+function todayStr() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 10);
+}
+
+function showStatus(id, msg, isErr) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = 'status ' + (isErr ? 'err' : 'ok');
+}
+
+// ---- タブ切り替え ----
+document.querySelectorAll('.tabbar button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tabbar button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    const page = btn.dataset.page;
+    document.getElementById('page-' + page).classList.add('active');
+    document.getElementById('pageTitle').textContent = TITLES[page];
+    if (page === 'menu') loadMenu();
+    if (page === 'chart') loadCharts();
+    if (page === 'log') loadExercises();
+  });
+});
+
+// ---- 記録タブ ----
+const sessionSets = {}; // exercise -> count (このブラウザセッション内の連番用)
+const sessionLog = [];
+
+document.getElementById('logDate').value = todayStr();
+
+async function loadExercises() {
+  const chipsEl = document.getElementById('exerciseChips');
+  try {
+    const list = await apiGet('listExercises');
+    const dl = document.getElementById('exerciseList');
+    dl.innerHTML = list.map(x => `<option value="${escapeHtml(x['種目名'])}">`).join('');
+    if (list.length === 0) {
+      chipsEl.innerHTML = '<span class="muted">まだ種目がありません。セットを記録すると自動登録されます。</span>';
+    } else {
+      chipsEl.innerHTML = list.map(x =>
+        `<span class="chip">${escapeHtml(x['種目名'])}<button data-name="${escapeHtml(x['種目名'])}" class="delEx">×</button></span>`
+      ).join('');
+      chipsEl.querySelectorAll('.delEx').forEach(b => {
+        b.addEventListener('click', async () => {
+          if (!confirm(`「${b.dataset.name}」を種目一覧から削除しますか?(過去の記録は残ります)`)) return;
+          await apiPost('deleteExercise', { name: b.dataset.name });
+          loadExercises();
+        });
+      });
+    }
+  } catch (e) {
+    chipsEl.innerHTML = `<span class="muted">${escapeHtml(e.message)}</span>`;
+  }
+}
+
+document.getElementById('btnAddSet').addEventListener('click', async () => {
+  const exercise = document.getElementById('logExercise').value.trim();
+  const weight = document.getElementById('logWeight').value;
+  const reps = document.getElementById('logReps').value;
+  const memo = document.getElementById('logMemo').value.trim();
+  const date = document.getElementById('logDate').value || todayStr();
+  if (!exercise || !weight || !reps) {
+    showStatus('logStatus', '種目・重量・回数は必須です', true);
+    return;
+  }
+  sessionSets[exercise] = (sessionSets[exercise] || 0) + 1;
+  const setNumber = sessionSets[exercise];
+  try {
+    await apiPost('addSets', [{ date, exercise, weight, reps, setNumber, memo }]);
+    sessionLog.unshift({ exercise, weight, reps, setNumber, memo });
+    renderSessionList();
+    showStatus('logStatus', '記録しました', false);
+    document.getElementById('logWeight').value = '';
+    document.getElementById('logReps').value = '';
+    document.getElementById('logMemo').value = '';
+    loadExercises();
+  } catch (e) {
+    sessionSets[exercise]--;
+    showStatus('logStatus', e.message, true);
+  }
+});
+
+function renderSessionList() {
+  const el = document.getElementById('sessionList');
+  if (sessionLog.length === 0) {
+    el.innerHTML = 'まだ記録がありません';
+    return;
+  }
+  el.innerHTML = sessionLog.map(s =>
+    `<div class="list-item"><span>${escapeHtml(s.exercise)} (${s.setNumber}) &nbsp; ${s.weight}kg × ${s.reps}回</span></div>`
+  ).join('');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ---- 体重タブ ----
+document.getElementById('bodyDate').value = todayStr();
+document.getElementById('btnAddBody').addEventListener('click', async () => {
+  const date = document.getElementById('bodyDate').value || todayStr();
+  const weight = document.getElementById('bodyWeight').value;
+  const bodyFat = document.getElementById('bodyFat').value;
+  const memo = document.getElementById('bodyMemo').value.trim();
+  if (!weight) {
+    showStatus('bodyStatus', '体重は必須です', true);
+    return;
+  }
+  try {
+    await apiPost('addBody', { date, weight, bodyFat, memo });
+    showStatus('bodyStatus', '記録しました', false);
+    document.getElementById('bodyWeight').value = '';
+    document.getElementById('bodyFat').value = '';
+    document.getElementById('bodyMemo').value = '';
+  } catch (e) {
+    showStatus('bodyStatus', e.message, true);
+  }
+});
+
+// ---- グラフタブ ----
+let chartBodyInstance = null;
+let chartExerciseInstance = null;
+let cachedSets = [];
+
+async function loadCharts() {
+  try {
+    const bodyData = await apiGet('listBody');
+    drawBodyChart(bodyData);
+  } catch (e) {
+    console.error(e);
+  }
+  try {
+    cachedSets = await apiGet('listSets');
+    const names = [...new Set(cachedSets.map(s => s['種目名']))].sort();
+    const sel = document.getElementById('chartExerciseSelect');
+    const prev = sel.value;
+    sel.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    if (names.includes(prev)) sel.value = prev;
+    drawExerciseChart(sel.value);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function drawBodyChart(rows) {
+  rows.sort((a, b) => new Date(a['日時']) - new Date(b['日時']));
+  const labels = rows.map(r => String(r['日時']).slice(0, 10));
+  const weight = rows.map(r => r['体重kg']);
+  const fat = rows.map(r => r['体脂肪率']);
+  if (chartBodyInstance) chartBodyInstance.destroy();
+  chartBodyInstance = new Chart(document.getElementById('chartBody'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: '体重(kg)', data: weight, borderColor: '#e8532e', yAxisID: 'y', tension: 0.2 },
+        { label: '体脂肪率(%)', data: fat, borderColor: '#3d8bff', yAxisID: 'y1', tension: 0.2 }
+      ]
+    },
+    options: {
+      scales: {
+        y: { position: 'left' },
+        y1: { position: 'right', grid: { drawOnChartArea: false } }
+      }
+    }
+  });
+}
+
+document.getElementById('chartExerciseSelect').addEventListener('change', e => drawExerciseChart(e.target.value));
+
+function drawExerciseChart(exerciseName) {
+  const rows = cachedSets.filter(s => s['種目名'] === exerciseName);
+  const byDate = {};
+  rows.forEach(r => {
+    const d = String(r['日時']).slice(0, 10);
+    const w = Number(r['重量kg']) || 0;
+    if (!byDate[d] || w > byDate[d]) byDate[d] = w;
+  });
+  const dates = Object.keys(byDate).sort();
+  if (chartExerciseInstance) chartExerciseInstance.destroy();
+  chartExerciseInstance = new Chart(document.getElementById('chartExercise'), {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [{ label: exerciseName || '', data: dates.map(d => byDate[d]), borderColor: '#e8532e', tension: 0.2 }]
+    },
+    options: { scales: { y: { title: { display: true, text: 'kg' } } } }
+  });
+}
+
+document.getElementById('btnRefreshCharts').addEventListener('click', loadCharts);
+
+// ---- メニュータブ ----
+async function loadMenu() {
+  const el = document.getElementById('menuView');
+  try {
+    const rows = await apiGet('listMenu');
+    if (rows.length === 0) {
+      el.innerHTML = 'まだメニューがインポートされていません';
+      return;
+    }
+    const order = ['月', '火', '水', '木', '金', '土', '日'];
+    const byDay = {};
+    rows.forEach(r => {
+      const d = r['曜日'];
+      (byDay[d] = byDay[d] || []).push(r);
+    });
+    el.innerHTML = order
+      .filter(d => byDay[d])
+      .map(d => {
+        const items = byDay[d].map(r =>
+          `<div class="list-item"><span>${escapeHtml(r['種目名'])}</span><span>${escapeHtml(r['目標セット'])}セット × ${escapeHtml(r['目標回数'])} ${r['目標重量'] ? '(' + escapeHtml(r['目標重量']) + ')' : ''}</span></div>`
+        ).join('');
+        return `<div class="menu-day">${d}曜日</div>${items}`;
+      }).join('');
+  } catch (e) {
+    el.innerHTML = escapeHtml(e.message);
+  }
+}
+
+document.getElementById('btnImportMenu').addEventListener('click', async () => {
+  const raw = document.getElementById('menuJson').value.trim();
+  if (!raw) { showStatus('menuStatus', 'JSONを貼り付けてください', true); return; }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    showStatus('menuStatus', 'JSONの形式が正しくありません: ' + e.message, true);
+    return;
+  }
+  if (!Array.isArray(parsed)) {
+    showStatus('menuStatus', '配列形式のJSONを貼り付けてください', true);
+    return;
+  }
+  try {
+    const res = await apiPost('importMenu', parsed);
+    showStatus('menuStatus', `${res.imported}件をインポートしました`, false);
+    document.getElementById('menuJson').value = '';
+    loadMenu();
+  } catch (e) {
+    showStatus('menuStatus', e.message, true);
+  }
+});
+
+// ---- プロフィールタブ ----
+const PROFILE_FIELDS = ['pLevel', 'pFreq', 'pEquip', 'pAvoid', 'pShape', 'pStrong', 'pWeak', 'pDeadline', 'pGoalType'];
+
+function loadProfile() {
+  const p = JSON.parse(localStorage.getItem('mta_profile') || '{}');
+  PROFILE_FIELDS.forEach(id => { if (p[id] !== undefined) document.getElementById(id).value = p[id]; });
+}
+function saveProfile() {
+  const p = {};
+  PROFILE_FIELDS.forEach(id => { p[id] = document.getElementById(id).value; });
+  localStorage.setItem('mta_profile', JSON.stringify(p));
+  return p;
+}
+document.getElementById('btnSaveProfile').addEventListener('click', () => {
+  saveProfile();
+  alert('プロフィールを保存しました');
+});
+
+document.getElementById('btnGenPrompt').addEventListener('click', () => {
+  const p = saveProfile();
+  const prompt = `以下の情報をもとに、私の週間筋トレメニューを考えてください。
+
+【プロフィール】
+- 経験レベル: ${p.pLevel}
+- 週のジム頻度: ${p.pFreq}回
+- 使える器具: ${p.pEquip}
+- 避けたい種目・部位: ${p.pAvoid || 'なし'}
+- 目指したい体形: ${p.pShape || '指定なし'}
+- 強い部位: ${p.pStrong || '指定なし'} / 弱い部位: ${p.pWeak || '指定なし'}
+- 目標達成の期限: ${p.pDeadline || '指定なし'}
+- 目標タイプ: ${p.pGoalType || '指定なし'}
+
+【お願い】
+上記に沿った週間メニューを提案してください。曜日ごとに種目・セット数・回数・重量の目安を決めてください(休養日は含めなくて構いません)。
+
+【出力形式】
+メニューは説明文とは別に、以下のJSON形式でコードブロックとして出力してください。このJSONを筋トレ記録アプリにそのままインポートします。
+- day は "月" "火" "水" "木" "金" "土" "日" のいずれか
+- sets は数値、reps と weight は "8-10" のような幅を持つ文字列でも構いません
+
+\`\`\`json
+[
+  { "day": "月", "exercise": "種目名", "sets": 4, "reps": "8-10", "weight": "60kg目安", "memo": "" }
+]
+\`\`\`
+
+まずメニューの意図(なぜこの構成にしたか)を簡潔に説明してから、最後にJSONを出力してください。`;
+  document.getElementById('promptOutput').textContent = prompt;
+  document.getElementById('promptCard').style.display = 'block';
+  document.getElementById('promptCard').scrollIntoView({ behavior: 'smooth' });
+});
+
+document.getElementById('btnCopyPrompt').addEventListener('click', async () => {
+  const text = document.getElementById('promptOutput').textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    showStatus('promptStatus', 'コピーしました', false);
+  } catch (e) {
+    showStatus('promptStatus', 'コピーに失敗しました。手動で選択してください', true);
+  }
+});
+
+// ---- 設定タブ ----
+function loadCfgForm() {
+  const c = cfg();
+  document.getElementById('cfgUrl').value = c.gasUrl || '';
+  document.getElementById('cfgToken').value = c.token || '';
+}
+document.getElementById('btnSaveCfg').addEventListener('click', () => {
+  setCfg({ gasUrl: document.getElementById('cfgUrl').value.trim(), token: document.getElementById('cfgToken').value.trim() });
+  showStatus('cfgStatus', '保存しました', false);
+});
+document.getElementById('btnTestCfg').addEventListener('click', async () => {
+  try {
+    await apiGet('listExercises');
+    showStatus('cfgStatus', '接続成功', false);
+  } catch (e) {
+    showStatus('cfgStatus', e.message, true);
+  }
+});
+
+// ---- 初期化 ----
+loadProfile();
+loadCfgForm();
+loadExercises();
+</script>
+</body>
+</html>
