@@ -230,6 +230,9 @@ function handleImportMenu_(payload) {
     return jsonOut_({ ok: false, error: 'payload must be an array' });
   }
   var sheet = getSheet_(SHEET_MENU);
+  // ヘッダー行がユーザーの手動作成等でズレていると「週」列が読めず全行が
+  // 週0扱いになってしまうため、インポートのたびに正しいヘッダーへ矯正する
+  sheet.getRange(1, 1, 1, HEADERS[SHEET_MENU].length).setValues([HEADERS[SHEET_MENU]]);
   var lastRow = sheet.getLastRow();
   if (lastRow > 1) {
     sheet.deleteRows(2, lastRow - 1);
@@ -243,11 +246,17 @@ function handleImportMenu_(payload) {
       m.day || '',
       m.exercise || '',
       Number(m.sets) || '',
-      m.reps || '',
-      m.weight || '',
+      m.reps !== undefined && m.reps !== null ? String(m.reps) : '',
+      m.weight !== undefined && m.weight !== null ? String(m.weight) : '',
       m.memo || '',
     ];
   });
-  sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
-  return jsonOut_({ ok: true, imported: rows.length });
+  var numRows = rows.length;
+  // 「12-15」のような回数・重量の表記をGoogleスプレッドシートが日付だと
+  // 誤認識して自動変換してしまうのを防ぐため、書き込み前にプレーンテキスト
+  // 書式にしておく(目標回数=E列, 目標重量=F列)
+  sheet.getRange(2, 5, numRows, 1).setNumberFormat('@');
+  sheet.getRange(2, 6, numRows, 1).setNumberFormat('@');
+  sheet.getRange(2, 1, numRows, rows[0].length).setValues(rows);
+  return jsonOut_({ ok: true, imported: numRows });
 }
