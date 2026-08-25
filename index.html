@@ -376,8 +376,9 @@ async function apiGet(action, extraParams) {
   const url = new URL(c.gasUrl);
   url.searchParams.set('action', action);
   url.searchParams.set('token', c.token || '');
+  url.searchParams.set('_', Date.now()); // キャッシュ回避
   if (extraParams) Object.entries(extraParams).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString());
+  const res = await fetch(url.toString(), { cache: 'no-store' });
   const json = await res.json();
   if (!json.ok) throw new Error(json.error || 'APIエラー');
   return json.data;
