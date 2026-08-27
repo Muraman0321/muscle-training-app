@@ -374,29 +374,57 @@ function cfg() {
 }
 function setCfg(obj) { localStorage.setItem('mta_cfg', JSON.stringify(obj)); }
 
-async function apiGet(action, extraParams) {
+// 設定のURL/トークンから空白・改行を除いて検証する。
+// iOS Safariは空白や改行が混ざったURLを fetch / new URL に渡すと
+// "The string did not match the expected pattern." で落ちるため、
+// コピペ時に紛れ込んだ改行などをここで吸収しておく。
+function gasEndpoint() {
   const c = cfg();
-  if (!c.gasUrl) throw new Error('設定タブでWeb AppのURLを登録してください');
-  const url = new URL(c.gasUrl);
-  url.searchParams.set('action', action);
-  url.searchParams.set('token', c.token || '');
-  url.searchParams.set('_', Date.now()); // キャッシュ回避
-  if (extraParams) Object.entries(extraParams).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), { cache: 'no-store' });
-  const json = await res.json();
+  const url = String(c.gasUrl || '').replace(/\s+/g, '');
+  if (!url) throw new Error('設定タブでWeb AppのURLを登録してください');
+  if (!/^https:\/\//i.test(url)) {
+    throw new Error('Web AppのURLは https:// から始まる必要があります(設定タブで貼り直してください)');
+  }
+  try { new URL(url); }
+  catch (e) { throw new Error('Web AppのURLを解釈できませんでした。設定タブで貼り直してください'); }
+  return { url, token: String(c.token || '').replace(/\s+/g, '') };
+}
+
+// GASの応答をJSONとして読む。デプロイが古い/権限設定ミスだと
+// HTMLのエラーページやログイン画面が返ってくるので、その旨を伝える。
+async function readJson(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(
+      'サーバーの応答がJSONではありませんでした(HTTP ' + res.status + ')。' +
+      'GAS Web Appを最新版にデプロイし直し、アクセスできるユーザーを「全員」にしてください'
+    );
+  }
+}
+
+async function apiGet(action, extraParams) {
+  const { url, token } = gasEndpoint();
+  const u = new URL(url);
+  u.searchParams.set('action', action);
+  u.searchParams.set('token', token);
+  u.searchParams.set('_', Date.now()); // キャッシュ回避
+  if (extraParams) Object.entries(extraParams).forEach(([k, v]) => u.searchParams.set(k, v));
+  const res = await fetch(u.toString(), { cache: 'no-store' });
+  const json = await readJson(res);
   if (!json.ok) throw new Error(json.error || 'APIエラー');
   return json.data;
 }
 
 async function apiPost(action, payload) {
-  const c = cfg();
-  if (!c.gasUrl) throw new Error('設定タブでWeb AppのURLを登録してください');
-  const res = await fetch(c.gasUrl, {
+  const { url, token } = gasEndpoint();
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ token: c.token || '', action, payload })
+    body: JSON.stringify({ token, action, payload })
   });
-  const json = await res.json();
+  const json = await readJson(res);
   if (!json.ok) throw new Error(json.error || 'APIエラー');
   return json;
 }
@@ -748,7 +776,7 @@ async function loadMenu() {
       return `<div class="menu-week">第${w}週</div>${dayBlocks}`;
     }).join('');
   } catch (e) {
-    el.innerHTML = escapeHtml(e.message);
+    el.innerHTML = escapeHtml('メニューの読み込みに失敗しました: ' + e.message);
     noteEl.textContent = '';
     toggleBtn.style.display = 'none';
   }
@@ -781,14 +809,17 @@ document.getElementById('btnImportMenu').addEventListener('click', async () => {
     showStatus('menuStatus', '配列形式のJSONを貼り付けてください', true);
     return;
   }
+  showStatus('menuStatus', 'インポート中... (' + parsed.length + '件)', false);
+  let res;
   try {
-    const res = await apiPost('importMenu', parsed);
-    showStatus('menuStatus', `${res.imported}件をインポートしました`, false);
-    document.getElementById('menuJson').value = '';
-    loadMenu();
+    res = await apiPost('importMenu', parsed);
   } catch (e) {
-    showStatus('menuStatus', e.message, true);
+    showStatus('menuStatus', 'インポートに失敗しました: ' + e.message, true);
+    return;
   }
+  showStatus('menuStatus', `${res.imported}件をインポートしました`, false);
+  document.getElementById('menuJson').value = '';
+  loadMenu(); // 表示更新。失敗しても #menuView 側にのみエラーが出る
 });
 
 // ---- プロフィールタブ ----
