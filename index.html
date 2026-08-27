@@ -268,7 +268,11 @@
   <section class="page" id="page-menu">
     <div class="card">
       <h2>長期メニュー</h2>
+      <label for="menuStartDate">第1週の開始日(月曜)</label>
+      <input type="date" id="menuStartDate">
+      <p class="muted" id="menuWeekNote" style="margin-top:8px"></p>
       <div id="menuView" class="muted">読み込み中...</div>
+      <button class="btn secondary small" id="btnToggleMenuRange" style="margin-top:12px; display:none">すべての週を表示</button>
     </div>
     <div class="card">
       <h2>メニューをインポート</h2>
@@ -631,41 +635,137 @@ async function loadOneRm() {
 document.getElementById('btnRefreshOneRm').addEventListener('click', loadOneRm);
 
 // ---- メニュータブ ----
+const MENU_START_KEY = 'mta_menu_start';
+// 第1週の開始日(月曜)の既定値。日付欄で設定されていない場合に使う。
+// メニューを組み直したらこの日付も更新する。
+const MENU_START_DEFAULT = '2026-08-31';
+let menuShowAll = false;
+
+// 曜日の並び順。「月〜日」と「1日目〜7日目」の両方に対応する
+function daySortKey(d) {
+  const wd = ['月', '火', '水', '木', '金', '土', '日'].indexOf(String(d));
+  if (wd >= 0) return wd;
+  const m = String(d).match(/(\d+)/);
+  return m ? Number(m[1]) - 1 : 999;
+}
+function dayLabel(d) {
+  return ['月', '火', '水', '木', '金', '土', '日'].includes(String(d)) ? d + '曜日' : String(d);
+}
+
+function dateToStr(d) {
+  const x = new Date(d);
+  x.setMinutes(x.getMinutes() - x.getTimezoneOffset());
+  return x.toISOString().slice(0, 10);
+}
+
+// メニューのメモにある「M/D週」表記から第1週の月曜日を推定する
+function deriveMenuStart(rows) {
+  const re = /(\d{1,2})\s*\/\s*(\d{1,2})\s*週/;
+  for (const r of rows) {
+    const m = String(r['メモ'] || '').match(re);
+    if (!m) continue;
+    const week = Number(r['週']) || 1;
+    const month = Number(m[1]), day = Number(m[2]);
+    const now = new Date();
+    let best = null, bestDiff = Infinity;
+    for (let y = now.getFullYear() - 1; y <= now.getFullYear() + 1; y++) {
+      const w1 = new Date(y, month - 1, day - (week - 1) * 7);
+      const diff = Math.abs(now - w1);
+      if (diff < bestDiff) { bestDiff = diff; best = w1; }
+    }
+    if (best) return dateToStr(best);
+  }
+  return '';
+}
+
+// 開始日と最終週から「今が第何週か」を求める(1〜maxWeekにクランプ)
+function currentWeekNumber(startStr, maxWeek) {
+  const start = new Date(startStr + 'T00:00:00');
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const w = Math.floor((now - start) / (7 * 86400000)) + 1;
+  return Math.max(1, Math.min(maxWeek, w));
+}
+
 async function loadMenu() {
   const el = document.getElementById('menuView');
+  const noteEl = document.getElementById('menuWeekNote');
+  const toggleBtn = document.getElementById('btnToggleMenuRange');
   try {
     const rows = await apiGet('listMenu');
     if (rows.length === 0) {
       el.innerHTML = 'まだメニューがインポートされていません';
+      noteEl.textContent = '';
+      toggleBtn.style.display = 'none';
       return;
     }
-    const dayOrder = ['月', '火', '水', '木', '金', '土', '日'];
+
     const byWeek = {};
     rows.forEach(r => {
       const w = Number(r['週']) || 0;
       (byWeek[w] = byWeek[w] || []).push(r);
     });
     const weeks = Object.keys(byWeek).map(Number).sort((a, b) => a - b);
-    el.innerHTML = weeks.map(w => {
+    const maxWeek = weeks[weeks.length - 1];
+
+    // 開始日: ユーザー設定 → 既定値 → メモから推定
+    const start = localStorage.getItem(MENU_START_KEY) || MENU_START_DEFAULT || deriveMenuStart(rows);
+    document.getElementById('menuStartDate').value = start;
+
+    let visibleWeeks = weeks;
+    if (start && !menuShowAll) {
+      const cw = currentWeekNumber(start, maxWeek);
+      visibleWeeks = weeks.filter(w => w >= cw).slice(0, 3);
+      if (visibleWeeks.length === 0) visibleWeeks = [maxWeek];
+      const last = visibleWeeks[visibleWeeks.length - 1];
+      const range = last > cw ? `第${cw}〜${last}週を表示中` : `第${cw}週のみ表示中`;
+      noteEl.textContent = `今週は第${cw}週です(${range})`;
+      toggleBtn.textContent = 'すべての週を表示';
+      toggleBtn.style.display = 'inline-block';
+    } else if (start && menuShowAll) {
+      noteEl.textContent = `全${maxWeek}週を表示中`;
+      toggleBtn.textContent = '直近3週だけ表示';
+      toggleBtn.style.display = 'inline-block';
+    } else {
+      noteEl.textContent = '第1週の開始日を設定すると、今週とその先2週だけを表示します';
+      toggleBtn.style.display = 'none';
+    }
+
+    el.innerHTML = visibleWeeks.map(w => {
       const byDay = {};
       byWeek[w].forEach(r => {
         const d = r['曜日'];
         (byDay[d] = byDay[d] || []).push(r);
       });
-      const dayBlocks = dayOrder
-        .filter(d => byDay[d])
+      const dayBlocks = Object.keys(byDay)
+        .sort((a, b) => daySortKey(a) - daySortKey(b))
         .map(d => {
           const items = byDay[d].map(r =>
             `<div class="list-item"><span>${escapeHtml(r['種目名'])}</span><span>${escapeHtml(r['目標セット'])}セット × ${escapeHtml(r['目標回数'])} ${r['目標重量'] ? '(' + escapeHtml(r['目標重量']) + ')' : ''}</span></div>`
           ).join('');
-          return `<div class="menu-day">${d}曜日</div>${items}`;
+          return `<div class="menu-day">${escapeHtml(dayLabel(d))}</div>${items}`;
         }).join('');
       return `<div class="menu-week">第${w}週</div>${dayBlocks}`;
     }).join('');
   } catch (e) {
     el.innerHTML = escapeHtml(e.message);
+    noteEl.textContent = '';
+    toggleBtn.style.display = 'none';
   }
 }
+
+document.getElementById('menuStartDate').addEventListener('change', e => {
+  const v = e.target.value;
+  if (v) localStorage.setItem(MENU_START_KEY, v);
+  else localStorage.removeItem(MENU_START_KEY);
+  menuShowAll = false;
+  loadMenu();
+});
+
+document.getElementById('btnToggleMenuRange').addEventListener('click', () => {
+  menuShowAll = !menuShowAll;
+  loadMenu();
+});
 
 document.getElementById('btnImportMenu').addEventListener('click', async () => {
   const raw = document.getElementById('menuJson').value.trim();
