@@ -109,6 +109,19 @@ function doGet(e) {
     return jsonOut_({ ok: true, message: 'muscle-training-app GAS is alive' });
   }
 
+  // デプロイ反映確認用の一時デバッグエンドポイント(機密情報なし、トークン不要)
+  if (action === 'debugInfo') {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var menuSheet = ss.getSheetByName(SHEET_MENU);
+    return jsonOut_({
+      ok: true,
+      sheetMenuConstant: SHEET_MENU,
+      allSheetNames: ss.getSheets().map(function (s) { return s.getName(); }),
+      menuSheetHeaderRow: menuSheet ? menuSheet.getRange(1, 1, 1, menuSheet.getLastColumn()).getValues()[0] : null,
+      menuSheetRowCount: menuSheet ? menuSheet.getLastRow() : null,
+    });
+  }
+
   if (!checkToken_(params.token)) {
     return jsonOut_({ ok: false, error: 'invalid token' });
   }
