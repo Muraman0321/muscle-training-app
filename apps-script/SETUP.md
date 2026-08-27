@@ -1,3 +1,7 @@
+---
+author: claude
+kind: work
+---
 # GAS Web App セットアップ手順
 
 これはGoogleアカウントでの操作が必要なため、ユーザー自身で行う手順です。
